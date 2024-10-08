@@ -5,10 +5,13 @@ library(kernlab)
 
 wsvm_solve <-function(X, A, wR, kernel='linear', sigma=0.05, lambda=1, e=1e-7) {
   
+  # calculate linear kernel 
+  # K(xi,xj) = xi^T*xj 
   if (kernel=='linear') {
     K = X %*% t(X)
     if (is.vector(X)) K = t(X) %*% X
   }
+  # K_rbf(xi,xj) = exp(−g||xi − xj||^2), g > 0.
   else if (kernel=='rbf'){
     rbf = rbfdot(sigma = sigma)
     K = kernelMatrix(rbf, X)
@@ -19,11 +22,32 @@ wsvm_solve <-function(X, A, wR, kernel='linear', sigma=0.05, lambda=1, e=1e-7) {
   
   n = length(A)
   C = 1/(2*n*lambda)
-  solution <- tryCatch(ipop(c = rep(-1, n), H = H, A = t(y), b = 0, l = numeric(n), u = C*abs(wR), r = 0), error=function(er) er)
-
+  
+  # quadratic programming problem
+  # min(c'*x + 1/2*x'*H*x)
+  # subject to:
+  # b <= A*x <= b + r 
+  # l <= x <= m 
+  solution <- tryCatch(
+    ipop(
+      c = rep(-1, n), 
+      H = H, # SQUARE MATRIX 
+      A = t(y), # constraints
+      b = 0,    # constrains
+      l = numeric(n),  # lower bound
+      u = C*abs(wR),   # upper bound
+      r = 0
+    ), 
+    error=function(er) er
+  )
+  
+  
+  # print(solution)
+  
   if ("error" %in% class(solution)) {
     return(list(beta0=NA, beta=NA, fit=NA, probability=NA, treatment=NA, sigma=NA, H=NA, alpha1=NA))
   }
+  
   alpha = primal(solution)
   alpha1 = alpha * y 
   

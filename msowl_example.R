@@ -1,6 +1,10 @@
 ## Bakoyiannis 2023 Optimal ITR Example
 # https://github.com/gbakoyannis/msowl
 
+
+
+# load functions 
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 source("./R/itr.R")
 source("./R/V_d.R")
 source("./R/wsvm_solve.R")
@@ -15,11 +19,20 @@ options(error=traceback)
 
 # The dataset can be obtained as follows
 library(foreign)
-data <- read.csv("./data/example_data.csv")
+example_data <- read.csv("./data/example_data.csv")
 print("DATA")
-head(data)
+head(example_data)
 
+str(example_data)
+
+
+############
+
+############
+
+############################################################
 # id        t1         t2 s1 s2          Z1          Z2  A
+############################################################
 # 1  1 0.0000000 0.01380424  1  3 -0.80030228 -0.02345331  1
 # 2  2 0.0000000 0.25340078  1  3 -0.77119721 -0.34741893  1
 # 3  3 0.0000000 0.61103624  1  2 -0.06412938  0.17254223 -1
@@ -31,15 +44,18 @@ head(data)
 # Estimation of an optimal individual treatment rule for prolonging the time spent in State 2 based on a linear decision function and considering the process up to time τ = 3 can be performed as follows:
 
 fit <- itr(
-  data=data, 
+  data=as.data.frame(example_data), 
   feat=c("Z1", "Z2"), 
   w = c(0, 1, 0), 
   tau = 3, 
   lambda=1, 
-  kernel="linear", 
-  SE=TRUE
+  kernel="rbf", 
+  sigma=2,
+  SE=F
 )
 
+str(fit$alpha1)
+fit 
 print("The estimates of the coefficients of the optimal linear decision function:")
 fit$beta_opt
 
@@ -52,15 +68,45 @@ fit$se_V_opt
 res = list()
 
 # Estimation of the the value function of the latter estimated optimal treatment rule and its standard error using the function `V_d` can be performed as follows:
-res$opt = V_d(data=data, w=c(0, 1, 0), tau=3, dec.fun=fit$fit, feat=c("Z1", "Z2"), SE = TRUE)
+res$opt = V_d(data=example_data, w=c(0, 1, 0), tau=3, dec.fun=fit$fit, feat=c("Z1", "Z2"), SE = FALSE)
 print(paste("Optimal Value of Indivualized Treatment:", res$opt[1], "+/-", res$opt[2]))
 
 # Estimation of the the value function of the fixed rule that assigns treatment 1 to everyone, along with its standard error, can be performed as follows:
-res$pos = V_d(data=data, w=c(0, 1, 0), tau=3, dec.fun=1, feat=c("Z1", "Z2"), SE = TRUE)
+res$pos = V_d(data=example_data, w=c(0, 1, 0), tau=3, dec.fun=1, feat=c("Z1", "Z2"), SE = TRUE)
 
 print(paste("Value of Treatment 1:", res$pos[1], "+/-", res$pos[2]))
 
 # Estimation of the the value function of the fixed rule that assigns treatment -1 to everyone, along with its standard error, can be performed as follows:
-res$neg = V_d(data=data, w=c(0, 1, 0), tau=3, dec.fun=-1, feat=c("Z1", "Z2"), SE = TRUE)
+res$neg = V_d(data=example_data, w=c(0, 1, 0), tau=3, dec.fun=-1, feat=c("Z1", "Z2"), SE = TRUE)
 
 print(paste("Value of Treatment -1:", res$neg[1], "+/-", res$neg[2]))
+
+#### NEW SYNTAX 
+
+source("./R/beta_version/msowl_new.R")
+
+# Question: How does R Formula work ? 
+
+##
+#### excerpt from msowl function 
+##
+# msout <- model.frame(formula, data)[[1]]
+# covs <- model.matrix(formula, data)[, -1]
+# data <- cbind.data.frame(id = data[,id], as.data.frame(cbind(msout, covs)))
+# feat <- colnames(data)[(ncol(msout) + 2):ncol(data)]
+# rm(msout, covs)
+# data <- data[order(data[,id], data[,"t1"]),]
+
+
+msowl(
+    formula, 
+    id, 
+    w = c(0, 1, 0), 
+    tau = 3, 
+    data, 
+    lambda = 1, 
+    jackknife = FALSE, 
+    trim = NULL
+)
+  
+

@@ -1,3 +1,10 @@
+
+# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+# source("./zeta_h_t.R")
+
+# library("pbapply")
+# library("doParallel")
+
 #' @title V_d
 #' @description
 #' Estimator of the value function of an ITR
@@ -10,8 +17,18 @@
 #' @param SE Standard Error calculation (bool)
 
 #' @export
-V_d <- function(data, w=c(0, 1, 0), tau=3, dec.fun, feat=NULL, SE=TRUE){
+V_d <- function(
+    data,
+    w=c(0, 1, 0), 
+    tau=3, 
+    dec.fun, 
+    feat=NULL, 
+    SE=TRUE, 
+    verbose = TRUE
+  ){
   
+  
+  time_a = Sys.time() 
   ## state space
   S <- with(data, sort(unique(c(s1, s2))))
   
@@ -33,7 +50,7 @@ V_d <- function(data, w=c(0, 1, 0), tau=3, dec.fun, feat=NULL, SE=TRUE){
   if(any(cond)){ 
     stop("min(w)<0 or max(w)>1 or sum(w)>=length(w)")
   }
-  
+
   #Calculate reward
   #Estimate censoring distribution 
   c.delta <- 1*(data$s1==data$s2 & data$t2<tau)
@@ -42,7 +59,15 @@ V_d <- function(data, w=c(0, 1, 0), tau=3, dec.fun, feat=NULL, SE=TRUE){
   Haz <- basehaz(fit, centered=FALSE)
   tt <- sort(unique(c(Haz$time, data[data$s1!=data$s2,"t2"])))
   tt <- c(0,tt[tt<=tau])
-  event <- matrix(sapply(tt, zeta_t, data=data, w=w, hazard=Haz, S=S, T=T), byrow=TRUE, nrow=length(tt))
+  
+  # parallel apply: zeta_t
+  cores = detectCores()
+  event <- matrix(
+    pbapply::pbsapply(tt, zeta_t, data=data, w=w, hazard=Haz, S=S, T=T,cl=cores),
+    byrow=TRUE, 
+    nrow=length(tt)
+  )
+  
   dm <- diff(c(tt, tau), lag=1)
   xi <- colSums(event*dm)
   xi <- matrix(tapply(X=xi, INDEX = data$id, FUN=sum))
@@ -59,17 +84,29 @@ V_d <- function(data, w=c(0, 1, 0), tau=3, dec.fun, feat=NULL, SE=TRUE){
   } else if (class(dec.fun)=="rbf"){
     rbf <- rbfdot(sigma = dec.fun$sigma)
     K <- kernelMatrix(rbf, dec.fun$Z, as.matrix(dat[,feat]))
+    print("dimk")
+    print(dim(K))
+    print("str(dec.fun$alpha1))")
+    print(str(dec.fun$alpha1))
     f <- dec.fun$beta0 + K%*%dec.fun$alpha1
   } else {
+    # supply custom algo dec.fun on population 
+    # TODO: handle data.frame row ordering.
+    # join on id 
     f <- dec.fun
   }
   
   V_n <- mean((xi/g)*(A*f>=0))
   
-  if(class(dec.fun)!="rbf" & isTRUE(SE)){
+  # Calculate Std Error of Value Estim. 
+  if(class(dec.fun)=="linear" & isTRUE(SE)){
+    time_a = Sys.time() 
     
-    ## SE estimation
-    #Keep last record for each id
+    if (verbose){
+      print("SE Estimation")
+    }
+    
+    # Keep last record for each id
     myid.uni <- unique(data$id)
     a<-length(myid.uni)
     last <- c()
@@ -130,6 +167,11 @@ V_d <- function(data, w=c(0, 1, 0), tau=3, dec.fun, feat=NULL, SE=TRUE){
     W <- mean(A*(xi/g^2)*(A*f>=0))
     psi <- (xi/g)*(A*f>=0) - V_n + eta - W*((A==1) - mean(A==1))
     se <- sqrt(mean(psi^2)/length(psi))
+    
+    
+    time_b = Sys.time() - time_a
+    print(time_b)
+    
   } else {
     if(isTRUE(SE)){
       warning("No standard error estimation with RBF kernel decision function")
